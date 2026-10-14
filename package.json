@@ -1,0 +1,18 @@
+{
+  "name": "ragdoll-ring",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser boksspel met actieve ragdoll-physics",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test test/*.test.mjs",
+    "vendor": "node scripts/vendor.mjs",
+    "e2e": "node test/e2e.mjs"
+  },
+  "devDependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "playwright": "*",
+    "three": "0.186.1"
+  }
+}
