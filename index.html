@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Ragdoll Ring</title>
+    <meta name="description" content="Ragdoll Ring: een boksspel in je browser met echte ragdoll-physics. Vijf stoten, dekking, bukken en knock-outs." />
+    <meta name="theme-color" content="#06070b" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "@dimforge/rapier3d-compat": "./vendor/rapier/rapier.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Boksring"></canvas>
+    <div class="vignette" id="vignette"></div>
+    <div class="flash" id="flash"></div>
+
+    <!-- HUD -->
+    <div id="hud" class="hud" hidden>
+      <div class="hud-top">
+        <div class="fighter-panel p1">
+          <div class="name-row"><span class="name" id="p1-name">JIJ</span><span class="pips" id="p1-pips"></span></div>
+          <div class="bar health"><div class="ghost" id="p1-ghost"></div><div class="fill" id="p1-health"></div></div>
+          <div class="bar stamina"><div class="fill" id="p1-stamina"></div></div>
+        </div>
+        <div class="center-panel">
+          <div class="round" id="hud-round">RONDE 1</div>
+          <div class="clock" id="hud-clock">1:15</div>
+        </div>
+        <div class="fighter-panel p2">
+          <div class="name-row"><span class="pips" id="p2-pips"></span><span class="name" id="p2-name">CPU</span></div>
+          <div class="bar health"><div class="ghost" id="p2-ghost"></div><div class="fill" id="p2-health"></div></div>
+          <div class="bar stamina"><div class="fill" id="p2-stamina"></div></div>
+        </div>
+      </div>
+      <div class="hud-hint" id="hud-hint"></div>
+      <button class="icon-btn pause-btn" id="pause-btn" aria-label="Pauze">❚❚</button>
+    </div>
+    <div id="announce" class="announce" aria-live="assertive"></div>
+    <div id="popups" class="popups"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <!-- Laden -->
+    <div id="loading" class="screen loading">
+      <div class="logo small"><span>RAGDOLL</span><span class="gold">RING</span></div>
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="loading-text">Physics laden…</p>
+    </div>
+
+    <!-- Hoofdmenu -->
+    <section id="menu" class="screen menu" hidden>
+      <div class="menu-card">
+        <div class="logo"><span>RAGDOLL</span><span class="gold">RING</span></div>
+        <p class="tagline">Boksen met echte ragdoll-physics. Elke klap telt, elke val is anders.</p>
+        <div class="difficulty" role="radiogroup" aria-label="Moeilijkheid">
+          <button role="radio" data-diff="easy">Makkelijk</button>
+          <button role="radio" data-diff="normal">Normaal</button>
+          <button role="radio" data-diff="hard">Zwaar</button>
+        </div>
+        <div class="menu-buttons">
+          <button class="btn primary" data-action="play">Vechten</button>
+          <button class="btn" data-action="controls">Besturing</button>
+          <button class="btn" data-action="settings">Instellingen</button>
+          <button class="btn" data-action="howto">Zo speel je</button>
+        </div>
+        <p class="footnote" id="menu-footnote">Pijltjes of WASD bewegen · J K U I L stoten · Spatie dekking</p>
+      </div>
+    </section>
+
+    <!-- Besturing -->
+    <section id="controls" class="screen panel" hidden>
+      <div class="panel-card">
+        <h2>Besturing</h2>
+        <p class="muted">Klik op een toets en druk daarna de nieuwe toets in. Esc annuleert.</p>
+        <div class="bind-list" id="bind-list"></div>
+        <div class="fixed-keys">
+          <div><kbd>Pijltjes</kbd> bewegen</div>
+          <div><kbd>Muis links</kbd> jab · <kbd>Muis rechts</kbd> directe</div>
+          <div><kbd>Esc</kbd> pauze · <kbd>M</kbd> geluid aan/uit</div>
+          <div><kbd>Gamepad</kbd> stick bewegen · X/▢ jab · Y/△ directe · LB/RB hoeken · A/✕ uppercut · RT dekking · LT bukken</div>
+        </div>
+        <div class="row-buttons">
+          <button class="btn" data-action="reset-binds">Standaard herstellen</button>
+          <button class="btn primary" data-action="back">Terug</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Instellingen -->
+    <section id="settings" class="screen panel" hidden>
+      <div class="panel-card">
+        <h2>Instellingen</h2>
+        <label class="slider"><span>Volume</span><input type="range" min="0" max="100" data-setting="master" /><output></output></label>
+        <label class="slider"><span>Effecten</span><input type="range" min="0" max="100" data-setting="sfx" /><output></output></label>
+        <label class="slider"><span>Publiek</span><input type="range" min="0" max="100" data-setting="crowd" /><output></output></label>
+        <label class="toggle"><span>Schermschudden</span><input type="checkbox" data-setting="shake" /><i></i></label>
+        <label class="toggle"><span>Schadegetallen</span><input type="checkbox" data-setting="numbers" /><i></i></label>
+        <label class="toggle"><span>Geluid uit</span><input type="checkbox" data-setting="muted" /><i></i></label>
+        <div class="row-buttons">
+          <button class="btn primary" data-action="back">Terug</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Uitleg -->
+    <section id="howto" class="screen panel" hidden>
+      <div class="panel-card howto">
+        <h2>Zo speel je</h2>
+        <ul>
+          <li><b>Win twee rondes.</b> Sla je tegenstander knock-out, of heb na de bel de meeste energie over.</li>
+          <li><b>Vijf stoten.</b> De jab is snel en goedkoop, de directe harder. Hoeken en de uppercut doen de meeste schade maar kosten meer stamina.</li>
+          <li><b>Dekking</b> vangt rechte stoten en hoeken op. De <b>uppercut</b> gaat er tussendoor en straft bukken extra af.</li>
+          <li><b>Bukken</b> laat stoten op je hoofd over je heen gaan, als je op tijd bent.</li>
+          <li><b>Counter:</b> raak je iemand die zelf aan het uithalen is, dan doet het 25% meer schade.</li>
+          <li><b>Stamina</b> (dunne balk) zakt bij elke stoot. Ben je leeg, dan slaan je stoten veel zachter.</li>
+          <li>Treffers op het hoofd doen meer schade dan op het lijf en maken duizelig.</li>
+        </ul>
+        <div class="row-buttons">
+          <button class="btn primary" data-action="back">Terug</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pauze -->
+    <section id="pause" class="screen panel" hidden>
+      <div class="panel-card narrow">
+        <h2>Pauze</h2>
+        <div class="menu-buttons">
+          <button class="btn primary" data-action="resume">Hervatten</button>
+          <button class="btn" data-action="restart">Opnieuw beginnen</button>
+          <button class="btn" data-action="settings">Instellingen</button>
+          <button class="btn" data-action="controls">Besturing</button>
+          <button class="btn danger" data-action="quit">Naar het menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Uitslag -->
+    <section id="result" class="screen panel" hidden>
+      <div class="panel-card narrow result">
+        <div class="result-title" id="result-title">JIJ WINT</div>
+        <p class="result-sub" id="result-sub"></p>
+        <div class="stats" id="result-stats"></div>
+        <div class="menu-buttons">
+          <button class="btn primary" data-action="rematch">Revanche</button>
+          <button class="btn" data-action="quit">Naar het menu</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="fatal" class="screen panel" hidden>
+      <div class="panel-card narrow">
+        <h2>Het spel kan niet starten</h2>
+        <p id="fatal-text" class="muted"></p>
+        <div class="row-buttons"><button class="btn primary" onclick="location.reload()">Opnieuw proberen</button></div>
+      </div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
