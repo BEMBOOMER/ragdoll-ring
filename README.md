@@ -40,6 +40,11 @@ Toetsen zijn aan te passen onder **Besturing**. Een gamepad werkt ook (stick bew
 - **Tegenstanders:** zes fictieve boksers met elk een stijl (outboxer, pressure fighter, counterpuncher, slugger, swarmer, boxer-puncher) en eigen lichaamseigenschappen. De AI ziet alleen wat een bokser ook ziet, met reactietijd, en onthoudt welke stoten jij graag gooit.
 - **Na een knock-out** volgt een herhaling in slowmotion met de meetwaarden uit de simulatie (stoot, trefplek, vuistsnelheid, impuls, hoofdversnelling).
 - **Zichtbare schade:** roodheid, blauwe plekken en zwelling op de plek van de treffer, cuts en neusbloed, bloed op handschoenen en canvas, zweet dat de huid laat glanzen. Bloed is uit te zetten.
+- **Beeld:** fysiek gebaseerde materialen zonder gloedeffecten. Huid met onderhuidse lichtverstrooiing, gelakt leer, satijn met sheen, reflecties van de zaal en harde topverlichting zoals bij een uitzending. Treffers laten zweet opspatten in plaats van vonken.
+
+## Eigen textures
+
+Alle textures worden standaard in code getekend. Echte afbeeldingen (bijvoorbeeld gemaakt met Codex) zet je in `assets/textures/` en noem je in `manifest.json`; ze vervangen dan automatisch de procedurele versie. Zie `assets/textures/README.md`.
 
 ## Testen
 
@@ -59,7 +64,7 @@ npm run e2e        # alle menu's en spelflows in Chromium (Playwright)
   - `ai.js` computertegenstander met zes stijlen en drie niveaus
   - `replay.js` ringbuffer voor de herhaling
   - `constants.js` alle afstelwaarden (stoten, impact, vermoeidheid, regels, stijlen, boksers)
-- `src/render/` Three.js: arena, boksers, scheidsrechter, effecten, procedurele textures (`textures.js`) en camera
+- `src/render/` Three.js: arena, boksers, scheidsrechter, effecten, procedurele textures (`textures.js`), materialen en zaalreflecties (`materials.js`) en camera
 - `src/audio.js` alle geluid live gesynthetiseerd met Web Audio
 - `src/input.js`, `src/ui.js`, `src/main.js` invoer, menu's/HUD en de hoofdlus
 

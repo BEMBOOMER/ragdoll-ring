@@ -4,6 +4,8 @@ import { Arena } from './arena.js';
 import { FighterView, TEAM, Marks } from './fighterView.js';
 import { Effects } from './effects.js';
 import { Referee } from './referee.js';
+import { arenaEnvironment } from './materials.js';
+import { RING_HALF } from '../game/constants.js';
 
 export class Renderer {
   constructor(canvas, game) {
@@ -13,10 +15,14 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Filmische tone mapping: contrast zoals bij een tv-uitzending, hoge lichten lopen zacht af.
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 0.95;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
+    // Reflecties van de zaal op huid, leer, metaal en zweet.
+    this.scene.environment = arenaEnvironment(this.renderer);
+    this.scene.environmentIntensity = 0.35;
     this.scene.background = new THREE.Color(0x06070b);
     this.scene.fog = new THREE.Fog(0x06070b, 11, 26);
     this.camera = new THREE.PerspectiveCamera(36, 1, 0.1, 80);
@@ -79,7 +85,6 @@ export class Renderer {
         this.effects.impact(e.pos, e.dir, e.blocked ? 0.25 : strength, e.blocked ? 'block' : e.zone);
         if (!e.blocked) {
           const view = this.views[e.defender];
-          view?.hitFlash(0.4 + strength * 0.6);
           view?.mark(e, this.blood);
           // Bloed: uit een cut of neus, en op de handschoen die raakte.
           if (this.blood && e.zone === 'head' && view?.marks.bleeding) {
@@ -220,6 +225,9 @@ export class Renderer {
         targetLook.lerp(lookAt, this.focusAmount * 0.7);
         targetPos.lerp(lookAt.clone().addScaledVector(cs.side, 2.4).add(new THREE.Vector3(0, 0.9, 0)), this.focusAmount * 0.6);
       } else this.focusAmount = Math.max(0, this.focusAmount - dt);
+      // Buiten de ring blijft de camera boven het bovenste touw, zodat hij er niet doorheen kijkt.
+      const outside = Math.max(Math.abs(targetPos.x), Math.abs(targetPos.z)) > RING_HALF;
+      if (outside) targetPos.y = Math.max(targetPos.y, 1.75);
     }
     const k = Math.min(1, dt * (this.mode === 'menu' ? 1.2 : 4));
     cs.pos.lerp(targetPos, k);

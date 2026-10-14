@@ -8,6 +8,7 @@ import { Input, PlayerController } from './input.js';
 import { UI } from './ui.js';
 import { load } from './storage.js';
 import { ROSTER, PLAYER_PROFILE } from './game/constants.js';
+import { loadTextureOverrides } from './render/textures.js';
 
 const DEFAULT_SETTINGS = {
   master: 0.8,
@@ -71,6 +72,12 @@ async function boot() {
   }
   renderer.shakeEnabled = settings.shake;
   renderer.blood = settings.blood;
+  // Echte textures uit assets/textures/ (als die er zijn) vervangen de procedurele.
+  loadTextureOverrides().then((loaded) => {
+    if (!loaded.length) return;
+    if (game.mode !== 'match') for (const m of renderer.marks) m.reset();
+    console.info('Textures geladen:', loaded.join(', '));
+  });
   const audio = new AudioEngine();
   audio.setVolumes({ master: settings.master, sfx: settings.sfx, crowd: settings.crowd });
   audio.setMuted(settings.muted);

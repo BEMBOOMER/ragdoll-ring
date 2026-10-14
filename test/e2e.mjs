@@ -133,8 +133,10 @@ try {
 
   await step('lopen met het toetsenbord verplaatst de bokser', async () => {
     const start = await G(() => window.__game.game.fighters[0].pos().x);
+    // Wacht op speltijd, niet op de klok: zonder GPU loopt het spel trager.
+    const t0 = await G(() => window.__game.game.time);
     await page.keyboard.down('KeyD');
-    await page.waitForTimeout(1500);
+    await page.waitForFunction((t) => window.__game.game.time > t + 1.2, t0, { timeout: 60000 });
     await page.keyboard.up('KeyD');
     const end = await G(() => window.__game.game.fighters[0].pos().x);
     assert.ok(Math.abs(end - start) > 0.15, `bewogen ${Math.abs(end - start).toFixed(2)} m`);

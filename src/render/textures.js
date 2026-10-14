@@ -171,9 +171,9 @@ export class DamageSkin {
 
   reset() {
     const { canvas: c, g } = this;
-    const base = skinDetail().canvas;
-    // Basisdetail twee keer zo vaak herhaald als de huid van armen en benen.
-    for (let x = 0; x < c.width; x += base.width) for (let y = 0; y < c.height; y += base.height) g.drawImage(base, x, y);
+    // Basisdetail op ware grootte herhaald (ook als het een echte huidtexture is).
+    g.fillStyle = g.createPattern(skinDetail().canvas, 'repeat');
+    g.fillRect(0, 0, c.width, c.height);
     this.bruise = 0;
     this.cuts = 0;
     this.bleed = 0;
@@ -205,9 +205,9 @@ export class DamageSkin {
     const { u, v } = sphereUV(d);
     const s = clamp(strength, 0, 1);
     // Rood worden, en bij herhaling blauw-paars.
-    this.blob(u, v, 0.045 + s * 0.035, 'rgba(255,150,140,A)', 0.12 + s * 0.18);
+    this.blob(u, v, 0.045 + s * 0.035, 'rgba(240,190,180,A)', 0.1 + s * 0.12);
     this.bruise += s;
-    if (this.bruise > 1.2) this.blob(u, v, 0.03 + s * 0.025, 'rgba(150,95,150,A)', clamp(0.06 + s * 0.12, 0, 0.22));
+    if (this.bruise > 1.2) this.blob(u, v, 0.03 + s * 0.025, 'rgba(160,128,148,A)', clamp(0.05 + s * 0.1, 0, 0.18));
     if (blood && s > 0.55) {
       if (spot === 'nose') this.bleed = Math.min(1, this.bleed + s * 0.5);
       else if ((spot === 'forehead' || spot === 'temple' || spot === 'jaw') && this.cuts < 4 && this.bruise > 2) this.cut(u, v, s);
@@ -312,7 +312,8 @@ export class GloveSkin {
     this.reset();
   }
   reset() {
-    this.g.drawImage(leather().canvas, 0, 0);
+    this.g.fillStyle = this.g.createPattern(leather().canvas, 'repeat');
+    this.g.fillRect(0, 0, this.canvas.width, this.canvas.height);
     this.texture.needsUpdate = true;
   }
   stain(amount) {
@@ -507,4 +508,54 @@ export function bloodStain() {
     }
     return texture(c);
   });
+}
+
+// ---------- echte textures ----------
+// Staat er in assets/textures/manifest.json een afbeelding voor een texture, dan vervangt die
+// de procedurele versie: bijvoorbeeld door Codex gemaakte of gefotografeerde textures.
+// Sleutels: skin, leather, ring, rope, floor; per sleutel map, normalMap of roughnessMap.
+// Zie assets/textures/README.md.
+const OVERRIDABLE = { skin: skinDetail, leather, ring: ringCanvas, rope, floor };
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+export async function loadTextureOverrides(base = 'assets/textures/') {
+  let manifest;
+  try {
+    const res = await fetch(base + 'manifest.json', { cache: 'no-cache' });
+    if (!res.ok) return [];
+    manifest = await res.json();
+  } catch {
+    return [];
+  }
+  const jobs = [];
+  for (const [key, maps] of Object.entries(manifest || {})) {
+    if (!OVERRIDABLE[key] || typeof maps !== 'object') continue;
+    const set = OVERRIDABLE[key]();
+    for (const [slot, file] of Object.entries(maps)) {
+      const tex = set[slot];
+      if (!tex?.isTexture || typeof file !== 'string') continue;
+      jobs.push(
+        loadImage(base + file)
+          .then((img) => {
+            // De afbeelding komt in hetzelfde canvas: alles wat de texture al gebruikt, krijgt hem mee.
+            const c = tex.image;
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
+            tex.needsUpdate = true;
+            return `${key}.${slot}`;
+          })
+          .catch(() => null)
+      );
+    }
+  }
+  return (await Promise.all(jobs)).filter(Boolean);
 }

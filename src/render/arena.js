@@ -45,43 +45,31 @@ export class Arena {
 
   buildLights() {
     const s = this.scene;
-    s.add(new THREE.HemisphereLight(0x8090b0, 0x0a0a10, 0.35));
-    const key = new THREE.SpotLight(0xfff1dc, 180, 30, 0.62, 0.55, 1.6);
+    // Weinig omgevingslicht: de zaal is donker, de ring fel en neutraal wit verlicht.
+    s.add(new THREE.HemisphereLight(0x9aa6bd, 0x0b0b0e, 0.06));
+    const key = new THREE.SpotLight(0xfff4e6, 230, 30, 0.6, 0.5, 1.6);
     key.position.set(0, 9.5, 0.5);
     key.target.position.set(0, 0, 0);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0004;
     key.shadow.normalBias = 0.02;
+    key.shadow.radius = 3;
     key.shadow.camera.near = 3;
     key.shadow.camera.far = 16;
     s.add(key, key.target);
     this.key = key;
-    const rimB = new THREE.SpotLight(0x4a8dff, 70, 28, 0.5, 0.6, 1.5);
-    rimB.position.set(-7, 6, -6);
-    rimB.target.position.set(0, 1, 0);
-    const rimR = new THREE.SpotLight(0xff4d5a, 70, 28, 0.5, 0.6, 1.5);
-    rimR.position.set(7, 6, -6);
-    rimR.target.position.set(0, 1, 0);
-    s.add(rimB, rimB.target, rimR, rimR.target);
-    const fill = new THREE.DirectionalLight(0xbfd2ff, 0.5);
+    // Twee schuine spots vanaf het rek: modelleren het lichaam, zoals bij tv-verlichting.
+    for (const [x, z] of [[-6, 5], [6, -5]]) {
+      const side = new THREE.SpotLight(0xf2f5ff, 55, 26, 0.45, 0.7, 1.6);
+      side.position.set(x, 7, z);
+      side.target.position.set(0, 1.1, 0);
+      s.add(side, side.target);
+    }
+    const fill = new THREE.DirectionalLight(0xdfe6f5, 0.1);
     fill.position.set(0, 4, 8);
     s.add(fill);
 
-    // Zichtbare lichtbundels.
-    const coneGeo = new THREE.ConeGeometry(2.6, 9, 40, 1, true);
-    coneGeo.translate(0, -4.5, 0);
-    const coneMat = new THREE.MeshBasicMaterial({
-      color: 0xfff3dc,
-      transparent: true,
-      opacity: 0.045,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const cone = new THREE.Mesh(coneGeo, coneMat);
-    cone.position.set(0, 9.5, 0.5);
-    this.group.add(cone);
     // Lampenrek boven de ring.
     const rig = new THREE.Mesh(
       new THREE.BoxGeometry(5, 0.12, 5),
@@ -132,7 +120,7 @@ export class Arena {
       const lea = leather();
       const pad = new THREE.Mesh(
         new THREE.BoxGeometry(0.2, 1.05, 0.2),
-        new THREE.MeshStandardMaterial({ color: col, roughness: 0.45, map: lea.map, normalMap: lea.normalMap, emissive: col, emissiveIntensity: 0.08 })
+        new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.45, map: lea.map, normalMap: lea.normalMap, clearcoat: 0.4, clearcoatRoughness: 0.3 })
       );
       pad.position.set(x - Math.sign(x) * 0.08, 0.85, z - Math.sign(z) * 0.08);
       pad.rotation.y = Math.PI / 4;
@@ -145,7 +133,7 @@ export class Arena {
     const heights = [1.28, 0.88, 0.48];
     heights.forEach((h, i) => {
       const braid = rope();
-      const mat = new THREE.MeshStandardMaterial({ color: ropeCols[i], roughness: 0.5, map: braid.map, normalMap: braid.normalMap });
+      const mat = new THREE.MeshPhysicalMaterial({ color: ropeCols[i], roughness: 0.48, map: braid.map, normalMap: braid.normalMap, clearcoat: 0.25, clearcoatRoughness: 0.35 });
       for (let s = 0; s < 4; s++) {
         const line = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, POST * 2, 12), mat);
         line.castShadow = true;
@@ -160,7 +148,7 @@ export class Arena {
     });
 
     // Trapjes en reclameborden langs de ring.
-    const boardMat = new THREE.MeshStandardMaterial({ color: 0x0b1224, emissive: 0x1d3b7a, emissiveIntensity: 0.35, roughness: 0.6 });
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x0b1224, emissive: 0x1d3b7a, emissiveIntensity: 0.18, roughness: 0.6 }); // ledborden
     for (const [x, z, ry] of [[0, -6.2, 0], [0, 6.2, Math.PI], [-6.2, 0, Math.PI / 2], [6.2, 0, -Math.PI / 2]]) {
       const board = new THREE.Mesh(new THREE.BoxGeometry(9, 0.9, 0.1), boardMat);
       board.position.set(x, -0.17, z);
@@ -192,11 +180,12 @@ export class Arena {
     }
     const geo = new THREE.CapsuleGeometry(0.2, 0.55, 4, 8);
     geo.translate(0, 0.48, 0);
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.9 });
+    // Publiek zit in het donker: nauwelijks zaalreflectie.
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.9, envMapIntensity: 0.15 });
     const mesh = new THREE.InstancedMesh(geo, mat, rows.length);
     const headGeo = new THREE.SphereGeometry(0.15, 10, 8);
     headGeo.translate(0, 1.12, 0);
-    const heads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ roughness: 0.8 }), rows.length);
+    const heads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ roughness: 0.8, envMapIntensity: 0.15 }), rows.length);
     const palette = [0x2a2f3d, 0x3b2a2a, 0x1f2f3a, 0x3a3524, 0x2d2236, 0x40403f, 0x1e2a22, 0x5a2324, 0x23345a];
     const skins = [0x8a5a3c, 0xc79072, 0x5c3b28, 0xe0b090, 0xa06a48];
     const col = new THREE.Color();
@@ -228,7 +217,7 @@ export class Arena {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      uniforms: { scale: { value: 300 } },
+      uniforms: { scale: { value: 110 } },
       vertexShader: `
         attribute float life;
         varying float vLife;
@@ -244,9 +233,9 @@ export class Arena {
         void main() {
           vec2 c = gl_PointCoord - 0.5;
           float d = length(c);
-          float a = smoothstep(0.5, 0.0, d) * vLife;
-          float star = max(0.0, 1.0 - abs(c.x) * 14.0) + max(0.0, 1.0 - abs(c.y) * 14.0);
-          gl_FragColor = vec4(vec3(1.0, 0.97, 0.9), clamp(a + star * vLife * 0.5, 0.0, 1.0));
+          // Een cameraflits ver weg: een klein, kort lichtpuntje, geen ster.
+          float a = smoothstep(0.5, 0.15, d) * vLife * 0.8;
+          gl_FragColor = vec4(vec3(1.0, 0.97, 0.92), a);
         }`,
     });
     this.flashes = new THREE.Points(geo, mat);

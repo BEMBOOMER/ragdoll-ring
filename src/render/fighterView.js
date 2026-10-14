@@ -1,9 +1,11 @@
 // Visuele bokser: per rigid body een mesh, geïnterpoleerd tussen physics-stappen.
-// Huid, leer en satijn komen uit textures.js; treffers worden op de huid geschilderd
-// (roodheid, blauwe plekken, zwelling, cuts) en de huid gaat glanzen van het zweet.
+// Huid, leer en satijn komen uit textures.js en materials.js (fysiek gebaseerd, geen gloed);
+// treffers worden op de huid geschilderd (roodheid, blauwe plekken, zwelling, cuts) en de
+// huid wordt natter van het zweet.
 import * as THREE from 'three';
 import { BODY } from '../game/constants.js';
 import { skinDetail, leather, satin, DamageSkin, GloveSkin } from './textures.js';
+import { skinMaterial, setSweat, leatherMaterial, satinMaterial, clothMaterial } from './materials.js';
 
 export const TEAM = [
   { name: 'Blauw', primary: 0x2f7bff, trim: 0xffffff, glove: 0x1f5fe0, skin: 0xd9a27c, hair: 0x2b1d14 },
@@ -12,10 +14,6 @@ export const TEAM = [
 
 // Ogen in de lokale ruimte van het hoofd (voor zwelling).
 const EYES = { L: new THREE.Vector3(0.33, 0.17, 0.93).normalize(), R: new THREE.Vector3(-0.33, 0.17, 0.93).normalize() };
-
-function std(color, opts = {}) {
-  return new THREE.MeshStandardMaterial({ color, roughness: opts.roughness ?? 0.6, metalness: opts.metalness ?? 0, ...opts });
-}
 
 // Schade die een heel gevecht blijft staan, per hoek en over de rondes heen.
 export class Marks {
@@ -46,43 +44,26 @@ export class FighterView {
     scene.add(this.root);
     this.meshes = [];
     this.byPart = {};
-    this.flash = 0;
     const look = { ...team, ...(fighter.profile?.look || {}) };
     const detail = skinDetail();
-    const skinOpts = {
-      color: look.skin,
-      roughness: 0.55,
-      normalMap: detail.normalMap,
-      normalScale: new THREE.Vector2(0.07, 0.07),
-      clearcoat: 0,
-      clearcoatRoughness: 0.4,
-      sheen: 0.25,
-      sheenColor: new THREE.Color(0xffd9c2),
-    };
-    const skin = new THREE.MeshPhysicalMaterial({ ...skinOpts, map: detail.map });
-    const face = new THREE.MeshPhysicalMaterial({ ...skinOpts, map: marks.face.texture });
-    const torso = new THREE.MeshPhysicalMaterial({ ...skinOpts, map: marks.body.texture });
-    const trunks = std(look.primary, { roughness: 0.36, map: satin(fighter.side === 0 ? '' : fighter.profile?.short || '').map });
-    const trim = std(look.trim, { roughness: 0.4 });
+    const skinOpts = { color: look.skin, normalMap: detail.normalMap, normalScale: new THREE.Vector2(0.07, 0.07) };
+    const skin = skinMaterial({ ...skinOpts, map: detail.map });
+    const face = skinMaterial({ ...skinOpts, map: marks.face.texture });
+    const torso = skinMaterial({ ...skinOpts, map: marks.body.texture });
+    const trunks = satinMaterial(look.primary, { map: satin(fighter.side === 0 ? '' : fighter.profile?.short || '').map });
+    const trim = satinMaterial(look.trim);
     const lea = leather();
     const gloves = {};
     for (const s of ['L', 'R']) {
-      gloves[s] = std(look.glove, {
-        roughness: 0.3,
-        metalness: 0.05,
-        map: marks.gloves[s].texture,
-        normalMap: lea.normalMap,
-        normalScale: new THREE.Vector2(0.6, 0.6),
-        emissive: look.glove,
-        emissiveIntensity: 0.04,
-      });
+      gloves[s] = leatherMaterial({ color: look.glove, map: marks.gloves[s].texture, normalMap: lea.normalMap, normalScale: new THREE.Vector2(0.5, 0.5) });
     }
-    const shoe = std(0x15151a, { roughness: 0.45, normalMap: lea.normalMap, normalScale: new THREE.Vector2(0.4, 0.4) });
-    const sock = std(0xf4f4f4, { roughness: 0.85 });
-    const hair = std(look.hair, { roughness: 0.9 });
-    const dark = std(0x111111, { roughness: 0.3 });
-    // Zwelling: dezelfde huid, iets paarser en glanzender.
-    const swollen = new THREE.MeshPhysicalMaterial({ ...skinOpts, color: new THREE.Color(look.skin).multiply(new THREE.Color(0xc79aa8)), roughness: 0.4 });
+    const shoe = leatherMaterial({ color: 0x15151a, normalMap: lea.normalMap, normalScale: new THREE.Vector2(0.4, 0.4), clearcoat: 0.35 });
+    const sock = clothMaterial(0xf1f1ee);
+    const hair = clothMaterial(look.hair, { roughness: 0.8, sheen: 0.6, sheenRoughness: 0.5 });
+    // Ogen: donker en nat, zodat ze het licht vangen.
+    const dark = new THREE.MeshPhysicalMaterial({ color: 0x1b130e, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 });
+    // Zwelling: dezelfde huid, iets paarser en strakker (glanzender).
+    const swollen = skinMaterial({ ...skinOpts, color: new THREE.Color(look.skin).multiply(new THREE.Color(0xc79aa8)), roughness: 0.4 });
     this.skins = [skin, face, torso, swollen];
     this.allMaterials = [skin, face, torso, swollen, trunks, trim, gloves.L, gloves.R, shoe, sock, hair, dark];
 
@@ -207,10 +188,6 @@ export class FighterView {
     this.applySwelling();
   }
 
-  hitFlash(amount = 1) {
-    this.flash = Math.max(this.flash, amount);
-  }
-
   // Een treffer laat sporen na op de plek waar hij landde.
   mark(e, blood) {
     const f = this.fighter;
@@ -254,14 +231,9 @@ export class FighterView {
         g.quaternion.slerpQuaternions(part.prevQ, part.curQ, alpha);
       }
     }
-    // Zweet: de huid wordt glanzender naarmate het gevecht vordert.
+    // Zweet: de huid wordt natter naarmate het gevecht vordert.
     const sweat = this.fighter.sweat || 0;
-    for (const m of this.skins) {
-      m.roughness = 0.55 - sweat * 0.22;
-      m.clearcoat = sweat * 0.7;
-    }
-    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 5);
-    for (const m of this.skins) m.emissive.setRGB(this.flash * 0.6, this.flash * 0.15, this.flash * 0.1);
+    for (const m of this.skins) setSweat(m, sweat);
   }
 
   dispose() {
