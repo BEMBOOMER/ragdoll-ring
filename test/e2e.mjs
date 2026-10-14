@@ -57,6 +57,19 @@ try {
     await page.click('[data-diff="normal"]');
   });
 
+  await step('tegenstander en aantal rondes kiezen wordt onthouden', async () => {
+    const before = await page.textContent('#opp-name');
+    await page.click('[data-action="opp-next"]');
+    assert.notEqual(await page.textContent('#opp-name'), before);
+    assert.notEqual(await G(() => JSON.parse(localStorage.getItem('rr-settings')).opponent), 'random');
+    await page.click('[data-action="opp-prev"]');
+    assert.equal(await G(() => window.__game.settings.opponent), 'random');
+    await page.click('[data-rounds="6"]');
+    assert.equal(await G(() => JSON.parse(localStorage.getItem('rr-settings')).rounds), 6);
+    await page.click('[data-rounds="3"]');
+    assert.equal(await page.getAttribute('[data-rounds="3"]', 'aria-checked'), 'true');
+  });
+
   await step('uitleg openen en terug met Escape', async () => {
     await page.click('#menu [data-action="howto"]');
     assert.ok(await visible('howto'));
@@ -72,6 +85,13 @@ try {
     await page.locator('label.toggle:has([data-setting="shake"])').click();
     assert.equal(await G(() => window.__game.renderer.shakeEnabled), false);
     await page.locator('label.toggle:has([data-setting="shake"])').click();
+    await page.locator('label.toggle:has([data-setting="blood"])').click();
+    assert.equal(await G(() => window.__game.renderer.blood), false);
+    await page.locator('label.toggle:has([data-setting="blood"])').click();
+    assert.equal(await G(() => window.__game.renderer.blood), true);
+    await page.click('[data-roundtime="60"]');
+    assert.equal(await G(() => window.__game.settings.roundTime), 60);
+    await page.click('[data-roundtime="90"]');
     await page.screenshot({ path: `${SHOTS}/2-settings.png` });
     await page.click('#settings [data-action="back"]');
     assert.equal(await G(() => JSON.parse(localStorage.getItem('rr-settings')).crowd), 0.25);
@@ -108,13 +128,15 @@ try {
     assert.ok(await visible('hud'));
     assert.equal(await G(() => window.__game.game.mode), 'match');
     await page.waitForFunction(() => window.__game.game.state === 'fight', null, { timeout: 90000 });
-    assert.equal(await page.textContent('#hud-round'), 'RONDE 1');
+    assert.equal(await page.textContent('#hud-round'), 'RONDE 1/3');
   });
 
   await step('lopen met het toetsenbord verplaatst de bokser', async () => {
     const start = await G(() => window.__game.game.fighters[0].pos().x);
+    // Wacht op speltijd, niet op de klok: zonder GPU loopt het spel trager.
+    const t0 = await G(() => window.__game.game.time);
     await page.keyboard.down('KeyD');
-    await page.waitForTimeout(1500);
+    await page.waitForFunction((t) => window.__game.game.time > t + 1.2, t0, { timeout: 60000 });
     await page.keyboard.up('KeyD');
     const end = await G(() => window.__game.game.fighters[0].pos().x);
     assert.ok(Math.abs(end - start) > 0.15, `bewogen ${Math.abs(end - start).toFixed(2)} m`);
@@ -162,6 +184,17 @@ try {
     assert.ok(width < 1, 'energiebalk is korter');
   });
 
+  await step('ontwijken (Q) en lijfstoot (bukken + stoot)', async () => {
+    await page.keyboard.press('KeyQ');
+    await page.waitForFunction(() => !!window.__game.game.fighters[0].slip, null, { timeout: 20000 });
+    await page.waitForFunction(() => !window.__game.game.fighters[0].slip, null, { timeout: 20000 });
+    await page.keyboard.down('ShiftLeft');
+    await page.keyboard.press('KeyK');
+    await page.waitForFunction(() => window.__game.game.fighters[0].punch?.body === true, null, { timeout: 20000 });
+    await page.keyboard.up('ShiftLeft');
+    await page.waitForFunction(() => !window.__game.game.fighters[0].punch, null, { timeout: 20000 });
+  });
+
   await step('pauze met Escape, hervatten met de knop', async () => {
     await page.keyboard.press('Escape');
     assert.ok(await visible('pause'));
@@ -185,65 +218,110 @@ try {
     assert.equal(await visible('pause'), false);
   });
 
-  await step('knock-out: slowmotion, rondewinst en volgende ronde', async () => {
-    await G(() => (window.__game.game.fighters[1].health = 3));
-    for (let i = 0; i < 6; i++) {
-      await page.keyboard.press('KeyK');
-      await page.waitForTimeout(150);
-      await page.waitForFunction(() => !window.__game.game.fighters[0].punch || window.__game.game.fighters[1].ko, null, { timeout: 20000 });
-      if (await G(() => window.__game.game.fighters[1].ko)) break;
-      const gap = await G(() => window.__game.game.fighters[0].pos().distanceTo(window.__game.game.fighters[1].pos()));
-      if (gap > 1.0) {
-        await page.keyboard.down('KeyD');
-        await page.waitForTimeout(300);
-        await page.keyboard.up('KeyD');
-      }
-    }
-    assert.ok(await G(() => window.__game.game.fighters[1].ko), 'tegenstander is knock-out');
-    assert.match(await page.textContent('#announce'), /K\.O\./);
-    await page.screenshot({ path: `${SHOTS}/6-ko.png` });
-    await page.waitForFunction(() => window.__game.game.round === 2, null, { timeout: 120000 });
-    assert.deepEqual(await G(() => window.__game.game.roundsWon), [1, 0]);
-    assert.equal(await page.locator('#p1-pips .on').count(), 1);
+  await step('knockdown: telling, opstaan met spierkracht en verder boksen', async () => {
+    await G(() => {
+      const g = window.__game.game;
+      const f = g.fighters[1];
+      f.knockDown({ kind: 'flash', getUp: 1.2, dir: f.pos().sub(g.fighters[0].pos()).normalize() });
+    });
+    await page.waitForFunction(() => window.__game.game.state === 'count', null, { timeout: 20000 });
+    assert.match(await page.textContent('#announce'), /KNOCKDOWN/);
+    await page.waitForFunction(() => /^[1-9]$/.test(document.querySelector('#count').textContent), null, { timeout: 60000 });
+    await page.screenshot({ path: `${SHOTS}/6-count.png` });
+    // Opstaan gebeurt met de spieren; daarna de telling doorspoelen naar acht.
+    await page.waitForFunction(() => window.__game.game.fighters[1].state === 'up', null, { timeout: 120000 });
+    await G(() => (window.__game.game.count.t = 0.9 + 7 * 0.9 + 0.01));
+    await page.waitForFunction(() => window.__game.game.state === 'fight', null, { timeout: 30000 });
+    assert.ok(await G(() => window.__game.game.fighters[1].headPos().y > 1.3), 'staat weer');
+    assert.equal(await page.locator('#p2-pips .on').count(), 1);
   });
 
-  await step('wedstrijd winnen toont uitslag met statistieken', async () => {
-    await G(() => window.__game.game.setController(1, window.__cpu));
+  await step('knock-out met één stoot: herhaling met meetwaarden en uitslag', async () => {
+    const gap = () => G(() => window.__game.game.fighters[0].pos().distanceTo(window.__game.game.fighters[1].pos()));
+    const approach = async () => {
+      for (let i = 0; i < 40 && (await gap()) > 0.95; i++) {
+        await page.keyboard.down('KeyD');
+        await page.waitForTimeout(250);
+        await page.keyboard.up('KeyD');
+      }
+    };
+    // Niet laten wegwankelen, eerst op afstand komen.
+    await G(() => (window.__game.game.fighters[1].daze = 0));
+    await approach();
+    // Maximale KO-gevoeligheid en geluk: de eerstvolgende schone stoot beslist.
+    await G(() => {
+      const g = window.__game.game;
+      g.rules.sensitivity = 50;
+      g.rng = () => 0;
+    });
+    for (let i = 0; i < 8 && !(await G(() => ['ko', 'count', 'matchEnd'].includes(window.__game.game.state))); i++) {
+      await approach();
+      await page.keyboard.press(i % 2 ? 'KeyU' : 'KeyK');
+      await page.waitForFunction(() => !window.__game.game.fighters[0].punch || window.__game.game.state !== 'fight', null, { timeout: 20000 });
+    }
+    // Een lijfstoot vloert met vertraging en gaat via de telling: dan blijft hij liggen tot tien.
+    await page.waitForFunction(() => ['ko', 'matchEnd', 'count'].includes(window.__game.game.state), null, { timeout: 60000 });
+    await G(() => {
+      const g = window.__game.game;
+      if (g.state !== 'count') return;
+      g.fighters[g.count.who].setOut();
+      g.count.t = 0.9 + 9 * 0.9 + 0.01;
+    });
+    await page.waitForFunction(() => ['ko', 'matchEnd'].includes(window.__game.game.state), null, { timeout: 60000 });
+    assert.match(await page.textContent('#announce'), /K\.O\./);
+    await page.screenshot({ path: `${SHOTS}/7-ko.png` });
+    await page.waitForSelector('#replay:not([hidden])', { timeout: 90000 });
+    assert.match(await page.textContent('#replay-card'), /m\/s|einde/);
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: `${SHOTS}/8-replay.png` });
+    await page.click('[data-action="skip-replay"]');
+    await page.waitForSelector('#result:not([hidden])', { timeout: 30000 });
+    assert.match(await page.textContent('#result-title'), /JIJ WINT/);
+    assert.match(await page.textContent('#result-sub'), /Knock-out|TKO/);
+    const stats = await page.locator('#result-stats').textContent();
+    assert.ok(stats.includes('Knockdowns'), 'statistieken zichtbaar');
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${SHOTS}/9-result.png` });
+  });
+
+  await step('revanche start een nieuwe wedstrijd', async () => {
+    await G(() => (window.__game.game.rng = Math.random));
+    await page.click('#result [data-action="rematch"]');
+    assert.equal(await visible('result'), false);
+    await page.waitForFunction(() => window.__game.game.state === 'intro' || window.__game.game.state === 'fight');
+    assert.equal(await G(() => window.__game.game.round), 1);
+    assert.equal(await G(() => window.__game.game.cards[0].length), 0);
+    assert.equal(await G(() => window.__game.game.rules.sensitivity), 1);
+  });
+
+  await step('na de laatste bel beslist de jury', async () => {
     await page.waitForFunction(() => window.__game.game.state === 'fight', null, { timeout: 90000 });
     await G(() => {
       const g = window.__game.game;
-      g.fighters[1].health = 20;
+      g.rules.rounds = g.round;
+      g.roundStats[0].clean = 200;
       g.roundClock = 0.05;
     });
     await page.waitForSelector('#result:not([hidden])', { timeout: 90000 });
     assert.match(await page.textContent('#result-title'), /JIJ WINT/);
-    const stats = await page.locator('#result-stats').textContent();
-    assert.ok(stats.length > 10, 'statistieken zichtbaar');
-    await page.waitForTimeout(2500);
-    await page.screenshot({ path: `${SHOTS}/7-result.png` });
-  });
-
-  await step('revanche start een nieuwe wedstrijd', async () => {
-    await page.click('#result [data-action="rematch"]');
-    assert.equal(await visible('result'), false);
-    await page.waitForFunction(() => window.__game.game.state === 'intro' || window.__game.game.state === 'fight');
-    assert.deepEqual(await G(() => window.__game.game.roundsWon), [0, 0]);
-    assert.equal(await G(() => window.__game.game.round), 1);
+    assert.match(await page.textContent('#result-sub'), /jurybeslissing/i);
+    assert.match(await page.textContent('#result-cards'), /Jury/);
   });
 
   await step('verliezen toont verliesscherm', async () => {
+    await page.click('#result [data-action="rematch"]');
     await page.waitForFunction(() => window.__game.game.state === 'fight', null, { timeout: 90000 });
-    for (let r = 0; r < 2; r++) {
-      await page.waitForFunction(() => window.__game.game.state === 'fight', null, { timeout: 90000 });
-      await G(() => {
-        const g = window.__game.game;
-        g.fighters[0].health = 10;
-        g.roundClock = 0.05;
-      });
-      await page.waitForFunction(() => ['intro', 'matchEnd'].includes(window.__game.game.state) && window.__game.game.roundsWon[1] > 0, null, { timeout: 90000 });
-    }
+    await G(() => {
+      const g = window.__game.game;
+      g.rules.rounds = g.round;
+      g.roundStats[1].clean = 200;
+      g.roundClock = 0.05;
+    });
     await page.waitForSelector('#result:not([hidden])', { timeout: 90000 });
-    assert.match(await page.textContent('#result-title'), /CPU WINT/);
+    const title = await page.textContent('#result-title');
+    assert.match(title, /WINT/);
+    assert.doesNotMatch(title, /JIJ/);
+    assert.ok(await page.locator('#result-title.lose').count());
   });
 
   await step('stoppen vanuit uitslag gaat terug naar het menu', async () => {

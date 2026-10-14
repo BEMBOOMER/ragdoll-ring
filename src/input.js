@@ -13,7 +13,9 @@ export const ACTIONS = [
   { id: 'rightHook', label: 'Rechtse hoek' },
   { id: 'uppercut', label: 'Uppercut' },
   { id: 'block', label: 'Dekking (vasthouden)' },
-  { id: 'duck', label: 'Bukken (vasthouden)' },
+  { id: 'duck', label: 'Bukken / lijfstoot (vasthouden)' },
+  { id: 'slipLeft', label: 'Ontwijken links' },
+  { id: 'slipRight', label: 'Ontwijken rechts' },
 ];
 
 export const DEFAULT_BINDINGS = {
@@ -28,12 +30,15 @@ export const DEFAULT_BINDINGS = {
   uppercut: 'KeyL',
   block: 'Space',
   duck: 'ShiftLeft',
+  slipLeft: 'KeyQ',
+  slipRight: 'KeyE',
 };
 
 // Vaste extra toetsen die niet te wijzigen zijn.
 const FIXED = { ArrowRight: 'forward', ArrowLeft: 'back', ArrowUp: 'left', ArrowDown: 'right' };
 export const RESERVED = ['Escape', 'KeyM', 'KeyP', 'Tab'];
 const PUNCH_IDS = ['jab', 'cross', 'leftHook', 'rightHook', 'uppercut'];
+const SLIP_IDS = { slipLeft: 1, slipRight: -1 };
 
 export function keyLabel(code) {
   if (!code) return '—';
@@ -77,6 +82,7 @@ export class Input {
   constructor(target = window) {
     this.down = new Set();
     this.pressed = [];
+    this.slips = [];
     this.bindings = { ...DEFAULT_BINDINGS, ...(load('rr-bindings') || {}) };
     this.capture = null;
     this.listeners = {};
@@ -135,8 +141,16 @@ export class Input {
     if (this.enabled) e.preventDefault();
     if (isDown) {
       if (!this.down.has(action) && PUNCH_IDS.includes(action) && this.enabled) this.pressed.push(action);
+      if (!this.down.has(action) && SLIP_IDS[action] && this.enabled) this.slips.push(SLIP_IDS[action]);
       this.down.add(action);
     } else this.down.delete(action);
+  }
+
+  // Vergeet ingedrukte toetsen en wachtende stoten (bij pauze, menu en start).
+  clear() {
+    this.down.clear();
+    this.pressed.length = 0;
+    this.slips.length = 0;
   }
 
   // Wacht op de volgende toets (voor opnieuw toewijzen).
@@ -168,9 +182,14 @@ export class Input {
     const btn = (i) => !!pad.buttons[i] && (pad.buttons[i].pressed || pad.buttons[i].value > 0.4);
     const now = pad.buttons.map((_, i) => btn(i));
     const edge = (i) => now[i] && !this.prevPad[i];
+    // Rechterstick opzij = ontwijken (alleen op de flank, zoals een knop).
+    const rx = pad.axes[2] || 0;
+    const slip = Math.abs(rx) > 0.6 && Math.abs(this.prevSlipX || 0) <= 0.6 ? (rx < 0 ? 1 : -1) : 0;
+    this.prevSlipX = rx;
     const res = {
       x: Math.abs(pad.axes[0]) > 0.18 ? pad.axes[0] : 0,
       y: Math.abs(pad.axes[1]) > 0.18 ? pad.axes[1] : 0,
+      slip,
       block: btn(7),
       duck: btn(6),
       punch: edge(2) ? 'jab' : edge(3) ? 'cross' : edge(4) ? 'leftHook' : edge(5) ? 'rightHook' : edge(0) ? 'uppercut' : null,
@@ -200,6 +219,7 @@ export class PlayerController {
     let sx = (d.has('forward') ? 1 : 0) - (d.has('back') ? 1 : 0);
     let sy = (d.has('left') ? 1 : 0) - (d.has('right') ? 1 : 0);
     let punch = inp.pressed.shift() || null;
+    let slip = inp.slips.shift() || 0;
     let block = d.has('block');
     let duck = d.has('duck');
     const pad = this.pad;
@@ -211,14 +231,17 @@ export class PlayerController {
       block = block || pad.block;
       duck = duck || pad.duck;
       punch = punch || pad.punch;
+      slip = slip || pad.slip;
     }
     // Snel na elkaar gedrukte stoten blijven bewaard voor de volgende frames (max. twee).
     if (inp.pressed.length > 2) inp.pressed.length = 2;
+    if (inp.slips.length > 1) inp.slips.length = 1;
     const { forward, right } = this.getBasis();
     const mx = right.x * sx + forward.x * sy;
     const mz = right.z * sx + forward.z * sy;
     const len = Math.hypot(mx, mz);
     const move = len > 1 ? { x: mx / len, z: mz / len } : { x: mx, z: mz };
-    return { move, block, duck, punch };
+    // Bukken + stoot = lijfstoot.
+    return { move, block, duck, punch, body: !!punch && duck, slip };
   }
 }

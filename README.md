@@ -1,6 +1,6 @@
 # Ragdoll Ring
 
-Boksen in de browser met actieve ragdoll-physics. Twee boksers houden zichzelf overeind met spierkracht; elke klap duwt echt tegen het lichaam, dus geen twee knock-outs zijn hetzelfde.
+Boksen in de browser met actieve ragdoll-physics. Twee boksers houden zichzelf overeind met spierkracht; elke klap is een echte botsing tussen vuist en lichaam. Er zijn geen geanimeerde treffers of gescripte knock-outs: hoe hard iemand geraakt wordt, hoe hij wankelt, valt en weer opstaat, volgt uit de simulatie.
 
 ## Spelen
 
@@ -9,7 +9,7 @@ npm install
 npm start          # http://localhost:5173
 ```
 
-Geen build-stap: `index.html` laadt de bestanden uit `src/` direct. Three.js en Rapier staan in `vendor/` (bijwerken met `npm run vendor`).
+Geen build-stap: `index.html` laadt de bestanden uit `src/` direct. Three.js en Rapier staan in `vendor/` (bijwerken met `npm run vendor`). Alle textures en geluiden worden bij het laden gegenereerd; er zijn geen afbeeldings- of audiobestanden.
 
 ## Besturing
 
@@ -19,23 +19,37 @@ Geen build-stap: `index.html` laadt de bestanden uit `src/` direct. Three.js en 
 | Jab | J | Linkerknop |
 | Directe | K | Rechterknop |
 | Linkse / rechtse hoek | U / I | |
-| Uppercut (gaat door de dekking) | L | Middelste knop |
+| Uppercut | L | Middelste knop |
+| Lijfstoot | Shift links vasthouden + stoot | |
+| Ontwijken links / rechts | Q / E | |
 | Dekking / bukken | Spatie / Shift links | |
+| Opstaan na een knockdown | snel op stoottoetsen tikken | |
 | Pauze / geluid | Esc of P / M | |
 
-Toetsen zijn aan te passen onder **Besturing**. Een gamepad werkt ook (stick bewegen, X Y LB RB A stoten, RT dekking, LT bukken, Start pauze).
+Toetsen zijn aan te passen onder **Besturing**. Een gamepad werkt ook (stick bewegen, X Y LB RB A stoten, RT dekking, LT bukken, rechterstick opzij ontwijken, Start pauze).
 
-## Regels
+## Het gevecht
 
-- Best of drie: twee rondes winnen. Een ronde duurt 75 seconden.
-- Knock-out wint de ronde direct; na de bel wint wie de meeste energie over heeft.
-- Stoten kosten stamina. Moe slaan is zwakker; dekking zakt bij lege stamina.
-- Treffers op het hoofd doen het meest, een counter doet 25% extra, een uppercut op een bukkende tegenstander 30% extra.
+- **Regels:** 3, 6 of 12 rondes van 1:00, 1:30 of 3:00. Het gevecht eindigt met een knock-out (tienstelling), een TKO (drie knockdowns in één ronde of de scheidsrechter die stopt) of een beslissing van drie juryleden (10-point must: clean punching, druk, ringcontrole, verdediging).
+- **Impact:** elke treffer wordt doorgerekend als botsing: relatieve snelheid van de vuist, effectieve slagmassa (lichaam, balans, rompdraaiing), trefpunt en hoe goed de verdediger zich schrap zet. Daaruit volgen impuls, lineaire en draaiende hoofdversnelling, en de ernst. Kin, kaak, slaap en lever zijn gevoelig; een hoek draait het hoofd echt weg.
+- **Knock-outs:** er is geen minimum aan schade. De kans op wankelen, een knockdown of een knock-out hangt af van ernst ten opzichte van de weerstand (kin, nek, opgebouwde hoofdschade, vermoeidheid, duizeligheid). Een counter op iemand die in je stoot loopt, is het gevaarlijkst. Soorten: flash, counter, opgebouwde schade, uitputting, lijfstoot, TKO, staande TKO.
+- **Knockdown en opstaan:** spierspanning en balans vallen weg en het lichaam valt zoals de physics het laat vallen. Opstaan (steunen, knielen, overeind) gaat met dezelfde spieren. Of het lukt voor tien, hangt af van de klap, de conditie en eerdere knockdowns.
+- **Conditie:** stamina (explosieve energie), cardio (wat daarvan bereikbaar blijft), armvermoeidheid per arm (tragere stoten, zakkende dekking) en lijfschade (trager herstel). De energiebalk herstelt deels; een deel van elke treffer gaat er blijvend af. Tussen de rondes herstelt de hoek een stuk.
+- **Combinaties:** de volgende stoot met de andere hand in de herstelfase van de vorige is goedkoper en sneller, en neemt de draai van de romp mee. Slechte timing kost balans. Geen combo-tellers: het voordeel zit in de physics.
+- **Verdediging:** dekking vangt stoten op hoofd en borst (net op tijd = pareren), maar niet de uppercut en niet de hoek naar het lijf. Ontwijken werkt vóór de stoot en weg van de slaande hand. Een gemiste zware stoot trekt je uit balans en laat je even open staan.
+- **Tegenstanders:** zes fictieve boksers met elk een stijl (outboxer, pressure fighter, counterpuncher, slugger, swarmer, boxer-puncher) en eigen lichaamseigenschappen. De AI ziet alleen wat een bokser ook ziet, met reactietijd, en onthoudt welke stoten jij graag gooit.
+- **Na een knock-out** volgt een herhaling in slowmotion met de meetwaarden uit de simulatie (stoot, trefplek, vuistsnelheid, impuls, hoofdversnelling).
+- **Zichtbare schade:** roodheid, blauwe plekken en zwelling op de plek van de treffer, cuts en neusbloed, bloed op handschoenen en canvas, zweet dat de huid laat glanzen. Bloed is uit te zetten.
+- **Beeld:** fysiek gebaseerde materialen zonder gloedeffecten. Huid met onderhuidse lichtverstrooiing, gelakt leer, satijn met sheen, reflecties van de zaal en harde topverlichting zoals bij een uitzending. Treffers laten zweet opspatten in plaats van vonken.
+
+## Eigen textures
+
+Alle textures worden standaard in code getekend. Echte afbeeldingen (bijvoorbeeld gemaakt met Codex) zet je in `assets/textures/` en noem je in `manifest.json`; ze vervangen dan automatisch de procedurele versie. Zie `assets/textures/README.md`.
 
 ## Testen
 
 ```bash
-npm test           # physics, stoten, schade, rondes en een AI-tegen-AI-wedstrijd (headless)
+npm test           # physics, impact, knockdowns, jury en AI-tegen-AI (headless)
 npm run e2e        # alle menu's en spelflows in Chromium (Playwright)
 ```
 
@@ -44,11 +58,14 @@ npm run e2e        # alle menu's en spelflows in Chromium (Playwright)
 ## Opbouw
 
 - `src/game/` physics en spelregels, los van de weergave (Rapier, vaste stap van 1/120 s)
-  - `fighter.js` actieve ragdoll: PD-spieren, zwaartekrachtcompensatie, IK voor armen en benen, voetstappen, stoten
-  - `match.js` ronde-verloop, treffers en schade, hit-stop en slowmotion
-  - `ai.js` computertegenstander in drie niveaus
-- `src/render/` Three.js: arena met publiek, boksers, impacteffecten en camera
-- `src/audio.js` alle geluid wordt live gesynthetiseerd met Web Audio (geen audiobestanden)
+  - `fighter.js` actieve ragdoll: PD-spieren, balans, IK voor armen en benen, voetstappen, stoten, ontwijken, knockdown en opstaan, conditie
+  - `impact.js` botsingsmodel: impuls, hoofdversnelling, trefplekken, weerstand en knock-outkans
+  - `match.js` treffers, scheidsrechter (telling, TKO), jury, rondes en uitslag
+  - `ai.js` computertegenstander met zes stijlen en drie niveaus
+  - `replay.js` ringbuffer voor de herhaling
+  - `constants.js` alle afstelwaarden (stoten, impact, vermoeidheid, regels, stijlen, boksers)
+- `src/render/` Three.js: arena, boksers, scheidsrechter, effecten, procedurele textures (`textures.js`), materialen en zaalreflecties (`materials.js`) en camera
+- `src/audio.js` alle geluid live gesynthetiseerd met Web Audio
 - `src/input.js`, `src/ui.js`, `src/main.js` invoer, menu's/HUD en de hoofdlus
 
 ## Publiceren
