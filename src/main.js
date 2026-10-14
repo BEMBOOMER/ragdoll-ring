@@ -7,8 +7,28 @@ import { AudioEngine } from './audio.js';
 import { Input, PlayerController } from './input.js';
 import { UI } from './ui.js';
 import { load } from './storage.js';
+import { ROSTER, PLAYER_PROFILE } from './game/constants.js';
 
-const DEFAULT_SETTINGS = { master: 0.8, sfx: 0.9, crowd: 0.6, shake: true, numbers: true, muted: false, difficulty: 'normal' };
+const DEFAULT_SETTINGS = {
+  master: 0.8,
+  sfx: 0.9,
+  crowd: 0.6,
+  shake: true,
+  numbers: true,
+  muted: false,
+  difficulty: 'normal',
+  blood: true,
+  voice: true,
+  replay: true,
+  rounds: 3,
+  roundTime: 90,
+  sensitivity: 1,
+  opponent: 'random',
+};
+
+function pickOpponent(id) {
+  return ROSTER.find((r) => r.id === id) || ROSTER[Math.floor(Math.random() * ROSTER.length)];
+}
 
 function fatal(text) {
   document.getElementById('loading').hidden = true;
@@ -50,9 +70,11 @@ async function boot() {
     return;
   }
   renderer.shakeEnabled = settings.shake;
+  renderer.blood = settings.blood;
   const audio = new AudioEngine();
   audio.setVolumes({ master: settings.master, sfx: settings.sfx, crowd: settings.crowd });
   audio.setMuted(settings.muted);
+  audio.voice = settings.voice;
   const input = new Input();
   input.bindMouse(canvas);
   const player = new PlayerController(input, () => renderer.basis());
@@ -62,7 +84,14 @@ async function boot() {
   const actions = {
     play() {
       audio.unlock();
+      renderer.stopReplay();
+      const opp = pickOpponent(settings.opponent);
+      game.configure({
+        rules: { rounds: settings.rounds, roundTime: settings.roundTime, sensitivity: settings.sensitivity },
+        profiles: [PLAYER_PROFILE, opp],
+      });
       cpu.setDifficulty(settings.difficulty);
+      cpu.setStyle(opp.style);
       cpu.reset();
       game.setController(0, player);
       game.setController(1, cpu);
@@ -73,29 +102,27 @@ async function boot() {
       ui.clearAnnounce();
       ui.showHud(true);
       input.enabled = true;
-      input.down.clear();
-      input.pressed.length = 0;
+      input.clear();
       canvas.focus();
     },
     pause() {
       if (game.mode !== 'match' || game.state === 'matchEnd') return;
       game.paused = true;
       input.enabled = false;
-      input.down.clear();
-      input.pressed.length = 0;
+      input.clear();
       ui.show('pause', { push: false });
     },
     resume() {
       game.paused = false;
       ui.hideAll();
       input.enabled = true;
-      input.down.clear();
-      input.pressed.length = 0;
+      input.clear();
       canvas.focus();
     },
     quit() {
       game.paused = false;
       input.enabled = false;
+      renderer.stopReplay();
       toMenu();
     },
   };
@@ -103,7 +130,12 @@ async function boot() {
   const ui = new UI({ game, input, audio, renderer, settings, actions });
 
   function toMenu() {
+    // Op de achtergrond van het menu: twee willekeurige stijlen tegen elkaar.
+    const [a, b] = [pickOpponent(), pickOpponent()];
+    demo[0].setStyle(a.style);
+    demo[1].setStyle(b.style);
     demo.forEach((d) => d.reset());
+    game.configure({ rules: { sensitivity: 1 }, profiles: [PLAYER_PROFILE, b] });
     game.setController(0, demo[0]);
     game.setController(1, demo[1]);
     game.startDemo();
@@ -133,18 +165,32 @@ async function boot() {
       switch (e.type) {
         case 'hit':
           if (!inMatch) break;
-          if (e.blocked) audio.block(e.damage);
-          else audio.punchHit(e.damage, e.zone, e.ko);
-          if (e.ko) {
-            audio.koRoar();
-            setTimeout(() => audio.bell(3), 700);
-          }
+          if (e.parried) audio.parry();
+          else if (e.blocked) audio.block(e.damage);
+          else audio.punchHit(e.damage, e.zone, !!e.knockdown);
+          if (e.knockdown) audio.koRoar();
           break;
         case 'whoosh':
           if (inMatch) audio.whoosh(e.name);
           break;
         case 'step':
           if (inMatch) audio.step();
+          break;
+        case 'slip':
+          if (inMatch) audio.slip();
+          break;
+        case 'thud':
+          if (inMatch) audio.thud(e.speed);
+          break;
+        case 'count':
+          audio.count(e.n);
+          break;
+        case 'resume':
+          audio.box();
+          break;
+        case 'ko':
+          audio.cheer(1);
+          setTimeout(() => audio.bell(3), 500);
           break;
         case 'countdown':
           if (e.n <= 2) audio.countdown(e.n);
@@ -165,6 +211,19 @@ async function boot() {
     }
   }
 
+  // Hijgen als de speler leeg is.
+  let breathTimer = 0;
+  function breathe(dt) {
+    const me = game.fighters[0];
+    if (game.mode !== 'match' || game.paused || game.state !== 'fight' || !me || me.state !== 'up') return;
+    const left = me.stamina / me.staminaCap();
+    breathTimer -= dt;
+    if (left < 0.3 && breathTimer <= 0) {
+      audio.breath(1 - left / 0.3);
+      breathTimer = 1.1;
+    }
+  }
+
   let last = performance.now();
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -176,10 +235,11 @@ async function boot() {
         if (game.mode === 'match' && !game.paused && !ui.current) actions.pause();
         else if (ui.current === 'pause') actions.resume();
       }
-      if (ui.current) ui.padNav(pad);
+      if (ui.current || renderer.replay) ui.padNav(pad);
     }
     game.step(dt);
     handleEvents();
+    breathe(dt);
     renderer.render(dt);
     ui.updateHud(dt);
     requestAnimationFrame(frame);

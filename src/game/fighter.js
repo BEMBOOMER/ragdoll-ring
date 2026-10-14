@@ -15,7 +15,6 @@ const UP = new THREE.Vector3(0, 1, 0);
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
-const HEAVY = ['cross', 'leftHook', 'rightHook', 'uppercut'];
 
 // Gewrichtslengtes (gewricht tot gewricht).
 const LU = 0.32; // schouder → elleboog
@@ -549,6 +548,11 @@ export class Fighter {
   }
 
   finishRise() {
+    if (!this.legsUp) {
+      this.setLegsLimp(false);
+      this.initFeet();
+      this.legsUp = true;
+    }
     this.state = 'up';
     this.balance = 0.35;
     this.daze = Math.max(this.daze, 0.55);

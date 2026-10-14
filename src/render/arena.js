@@ -1,65 +1,10 @@
 // De zaal: ring met canvas, touwen en hoekpalen, licht, publiek en flitsers.
 import * as THREE from 'three';
 import { RING_HALF } from '../game/constants.js';
+import { ringCanvas, rope, floor as floorTex, leather } from './textures.js';
 
 const POST = RING_HALF + 0.18;
 const RING_COLORS = { blue: 0x2f7bff, red: 0xff3b3b, white: 0xf2f2f2 };
-
-function matTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 1024;
-  const g = c.getContext('2d');
-  const grd = g.createRadialGradient(512, 512, 80, 512, 512, 720);
-  grd.addColorStop(0, '#2c3e66');
-  grd.addColorStop(1, '#16213b');
-  g.fillStyle = grd;
-  g.fillRect(0, 0, 1024, 1024);
-  // fijne canvas-structuur
-  g.globalAlpha = 0.05;
-  for (let i = 0; i < 1024; i += 4) {
-    g.fillStyle = i % 8 ? '#000' : '#fff';
-    g.fillRect(i, 0, 1, 1024);
-    g.fillRect(0, i, 1024, 1);
-  }
-  g.globalAlpha = 1;
-  // rand
-  g.strokeStyle = 'rgba(255,255,255,0.18)';
-  g.lineWidth = 10;
-  g.strokeRect(40, 40, 944, 944);
-  // middencirkel met logo
-  g.beginPath();
-  g.arc(512, 512, 230, 0, Math.PI * 2);
-  g.fillStyle = 'rgba(255,255,255,0.06)';
-  g.fill();
-  g.lineWidth = 6;
-  g.strokeStyle = 'rgba(255,214,102,0.55)';
-  g.stroke();
-  g.fillStyle = 'rgba(255,214,102,0.9)';
-  g.font = '900 92px "Anton", Impact, "Arial Black", sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText('RAGDOLL', 512, 470);
-  g.fillStyle = 'rgba(255,255,255,0.85)';
-  g.fillText('RING', 512, 566);
-  // hoekdriehoeken
-  const corner = (x, y, col, dx, dy) => {
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + dx * 170, y);
-    g.lineTo(x, y + dy * 170);
-    g.closePath();
-    g.fillStyle = col;
-    g.fill();
-  };
-  corner(44, 44, 'rgba(47,123,255,0.55)', 1, 1);
-  corner(980, 980, 'rgba(255,59,59,0.55)', -1, -1);
-  corner(980, 44, 'rgba(255,255,255,0.18)', -1, 1);
-  corner(44, 980, 'rgba(255,255,255,0.18)', 1, -1);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
-  return tex;
-}
 
 function apronTexture() {
   const c = document.createElement('canvas');
@@ -80,21 +25,6 @@ function apronTexture() {
   g.fillText('RAGDOLL  RING', 300, 70);
   g.fillStyle = 'rgba(255,214,102,0.85)';
   g.fillText('★  ★  ★', 760, 70);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function floorTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 512;
-  const g = c.getContext('2d');
-  const grd = g.createRadialGradient(256, 256, 30, 256, 256, 256);
-  grd.addColorStop(0, '#1b1f2b');
-  grd.addColorStop(0.5, '#0d0f16');
-  grd.addColorStop(1, '#050608');
-  g.fillStyle = grd;
-  g.fillRect(0, 0, 512, 512);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -168,7 +98,7 @@ export class Arena {
 
   buildRing() {
     const g = this.group;
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.95 }));
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.MeshStandardMaterial({ map: floorTex().map, roughness: 0.92 }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.62;
     floor.receiveShadow = true;
@@ -179,7 +109,8 @@ export class Arena {
     apron.wrapS = THREE.RepeatWrapping;
     apron.repeat.set(2, 1);
     const sideMat = new THREE.MeshStandardMaterial({ map: apron, roughness: 0.7 });
-    const topMat = new THREE.MeshStandardMaterial({ map: matTexture(), roughness: 0.85 });
+    const mat = ringCanvas();
+    const topMat = new THREE.MeshStandardMaterial({ map: mat.map, normalMap: mat.normalMap, normalScale: new THREE.Vector2(0.5, 0.5), roughnessMap: mat.roughnessMap, roughness: 1 });
     const platform = new THREE.Mesh(new THREE.BoxGeometry(size, 0.62, size), [sideMat, sideMat, topMat, sideMat, sideMat, sideMat]);
     platform.position.y = -0.31;
     platform.receiveShadow = true;
@@ -198,9 +129,10 @@ export class Arena {
       post.position.set(x, 0.775, z);
       post.castShadow = true;
       g.add(post);
+      const lea = leather();
       const pad = new THREE.Mesh(
         new THREE.BoxGeometry(0.2, 1.05, 0.2),
-        new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, emissive: col, emissiveIntensity: 0.08 })
+        new THREE.MeshStandardMaterial({ color: col, roughness: 0.45, map: lea.map, normalMap: lea.normalMap, emissive: col, emissiveIntensity: 0.08 })
       );
       pad.position.set(x - Math.sign(x) * 0.08, 0.85, z - Math.sign(z) * 0.08);
       pad.rotation.y = Math.PI / 4;
@@ -212,17 +144,18 @@ export class Arena {
     const ropeCols = [0xd93a3a, 0xf0f0f0, 0x2f6fe0];
     const heights = [1.28, 0.88, 0.48];
     heights.forEach((h, i) => {
-      const mat = new THREE.MeshStandardMaterial({ color: ropeCols[i], roughness: 0.45 });
+      const braid = rope();
+      const mat = new THREE.MeshStandardMaterial({ color: ropeCols[i], roughness: 0.5, map: braid.map, normalMap: braid.normalMap });
       for (let s = 0; s < 4; s++) {
-        const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, POST * 2, 10), mat);
-        rope.castShadow = true;
-        rope.rotation.z = Math.PI / 2;
-        if (s < 2) rope.position.set(0, h, s === 0 ? -POST : POST);
+        const line = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, POST * 2, 12), mat);
+        line.castShadow = true;
+        line.rotation.z = Math.PI / 2;
+        if (s < 2) line.position.set(0, h, s === 0 ? -POST : POST);
         else {
-          rope.rotation.set(Math.PI / 2, 0, 0);
-          rope.position.set(s === 2 ? -POST : POST, h, 0);
+          line.rotation.set(Math.PI / 2, 0, 0);
+          line.position.set(s === 2 ? -POST : POST, h, 0);
         }
-        g.add(rope);
+        g.add(line);
       }
     });
 

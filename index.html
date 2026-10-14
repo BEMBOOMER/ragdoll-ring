@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Ragdoll Ring</title>
-    <meta name="description" content="Ragdoll Ring: een boksspel in je browser met echte ragdoll-physics. Vijf stoten, dekking, bukken en knock-outs." />
+    <meta name="description" content="Ragdoll Ring: boksen in je browser met echte ragdoll-physics. Elke klap is een botsing, elke knock-out ontstaat uit de simulatie." />
     <meta name="theme-color" content="#06070b" />
     <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -30,8 +30,8 @@
       <div class="hud-top">
         <div class="fighter-panel p1">
           <div class="name-row"><span class="name" id="p1-name">JIJ</span><span class="pips" id="p1-pips"></span></div>
-          <div class="bar health"><div class="ghost" id="p1-ghost"></div><div class="fill" id="p1-health"></div></div>
-          <div class="bar stamina"><div class="fill" id="p1-stamina"></div></div>
+          <div class="bar health"><div class="ghost" id="p1-ghost"></div><div class="fill" id="p1-health"></div><div class="cap" id="p1-cap"></div></div>
+          <div class="bar stamina"><div class="fill" id="p1-stamina"></div><div class="cap" id="p1-scap"></div></div>
         </div>
         <div class="center-panel">
           <div class="round" id="hud-round">RONDE 1</div>
@@ -39,12 +39,19 @@
         </div>
         <div class="fighter-panel p2">
           <div class="name-row"><span class="pips" id="p2-pips"></span><span class="name" id="p2-name">CPU</span></div>
-          <div class="bar health"><div class="ghost" id="p2-ghost"></div><div class="fill" id="p2-health"></div></div>
-          <div class="bar stamina"><div class="fill" id="p2-stamina"></div></div>
+          <div class="bar health"><div class="ghost" id="p2-ghost"></div><div class="fill" id="p2-health"></div><div class="cap" id="p2-cap"></div></div>
+          <div class="bar stamina"><div class="fill" id="p2-stamina"></div><div class="cap" id="p2-scap"></div></div>
         </div>
       </div>
       <div class="hud-hint" id="hud-hint"></div>
+      <div class="count" id="count" aria-live="assertive"></div>
+      <div class="rally" id="rally" hidden>Tik snel op je stoottoetsen om op te staan!</div>
       <button class="icon-btn pause-btn" id="pause-btn" aria-label="Pauze">❚❚</button>
+    </div>
+    <div id="replay" class="replay" hidden>
+      <div class="replay-tag">HERHALING</div>
+      <div class="replay-card" id="replay-card"></div>
+      <button class="btn small" data-action="skip-replay">Overslaan</button>
     </div>
     <div id="announce" class="announce" aria-live="assertive"></div>
     <div id="popups" class="popups"></div>
@@ -61,11 +68,23 @@
     <section id="menu" class="screen menu" hidden>
       <div class="menu-card">
         <div class="logo"><span>RAGDOLL</span><span class="gold">RING</span></div>
-        <p class="tagline">Boksen met echte ragdoll-physics. Elke klap telt, elke val is anders.</p>
-        <div class="difficulty" role="radiogroup" aria-label="Moeilijkheid">
-          <button role="radio" data-diff="easy">Makkelijk</button>
-          <button role="radio" data-diff="normal">Normaal</button>
-          <button role="radio" data-diff="hard">Zwaar</button>
+        <p class="tagline">Boksen met echte ragdoll-physics. Elke klap is een botsing; één perfecte counter kan het gevecht beslissen.</p>
+        <div class="opponent" aria-label="Tegenstander">
+          <button class="arrow" data-action="opp-prev" aria-label="Vorige tegenstander">‹</button>
+          <div class="opp-info"><span class="opp-name" id="opp-name">Willekeurig</span><span class="opp-style" id="opp-style">Verrassing</span></div>
+          <button class="arrow" data-action="opp-next" aria-label="Volgende tegenstander">›</button>
+        </div>
+        <div class="choices">
+          <div class="difficulty" role="radiogroup" aria-label="Moeilijkheid">
+            <button role="radio" data-diff="easy">Makkelijk</button>
+            <button role="radio" data-diff="normal">Normaal</button>
+            <button role="radio" data-diff="hard">Zwaar</button>
+          </div>
+          <div class="difficulty" role="radiogroup" aria-label="Aantal rondes">
+            <button role="radio" data-rounds="3">3 rondes</button>
+            <button role="radio" data-rounds="6">6</button>
+            <button role="radio" data-rounds="12">12</button>
+          </div>
         </div>
         <div class="menu-buttons">
           <button class="btn primary" data-action="play">Vechten</button>
@@ -73,7 +92,7 @@
           <button class="btn" data-action="settings">Instellingen</button>
           <button class="btn" data-action="howto">Zo speel je</button>
         </div>
-        <p class="footnote" id="menu-footnote">Pijltjes of WASD bewegen · J K U I L stoten · Spatie dekking</p>
+        <p class="footnote" id="menu-footnote">WASD bewegen · J K U I L stoten · Spatie dekking · Q E ontwijken · Shift + stoot naar het lijf</p>
       </div>
     </section>
 
@@ -87,7 +106,8 @@
           <div><kbd>Pijltjes</kbd> bewegen</div>
           <div><kbd>Muis links</kbd> jab · <kbd>Muis rechts</kbd> directe</div>
           <div><kbd>Esc</kbd> pauze · <kbd>M</kbd> geluid aan/uit</div>
-          <div><kbd>Gamepad</kbd> stick bewegen · X/▢ jab · Y/△ directe · LB/RB hoeken · A/✕ uppercut · RT dekking · LT bukken</div>
+          <div><kbd>Bukken</kbd> + stoot = lijfstoot · <kbd>Q</kbd> <kbd>E</kbd> ontwijken (weg van de slaande hand)</div>
+          <div><kbd>Gamepad</kbd> stick bewegen · X/▢ jab · Y/△ directe · LB/RB hoeken · A/✕ uppercut · RT dekking · LT bukken · rechterstick opzij ontwijken</div>
         </div>
         <div class="row-buttons">
           <button class="btn" data-action="reset-binds">Standaard herstellen</button>
@@ -106,6 +126,18 @@
         <label class="toggle"><span>Schermschudden</span><input type="checkbox" data-setting="shake" /><i></i></label>
         <label class="toggle"><span>Schadegetallen</span><input type="checkbox" data-setting="numbers" /><i></i></label>
         <label class="toggle"><span>Geluid uit</span><input type="checkbox" data-setting="muted" /><i></i></label>
+        <label class="toggle"><span>Stem van de scheidsrechter</span><input type="checkbox" data-setting="voice" /><i></i></label>
+        <label class="toggle"><span>Bloed en cuts</span><input type="checkbox" data-setting="blood" /><i></i></label>
+        <label class="toggle"><span>Herhaling na een knock-out</span><input type="checkbox" data-setting="replay" /><i></i></label>
+        <label class="slider"><span>KO-gevoeligheid</span><input type="range" min="50" max="200" step="10" data-setting="sensitivity" /><output></output></label>
+        <div class="setting-row">
+          <span>Rondeduur</span>
+          <div class="difficulty" role="radiogroup" aria-label="Rondeduur">
+            <button role="radio" data-roundtime="60">1:00</button>
+            <button role="radio" data-roundtime="90">1:30</button>
+            <button role="radio" data-roundtime="180">3:00</button>
+          </div>
+        </div>
         <div class="row-buttons">
           <button class="btn primary" data-action="back">Terug</button>
         </div>
@@ -117,13 +149,14 @@
       <div class="panel-card howto">
         <h2>Zo speel je</h2>
         <ul>
-          <li><b>Win twee rondes.</b> Sla je tegenstander knock-out, of heb na de bel de meeste energie over.</li>
-          <li><b>Vijf stoten.</b> De jab is snel en goedkoop, de directe harder. Hoeken en de uppercut doen de meeste schade maar kosten meer stamina.</li>
-          <li><b>Dekking</b> vangt rechte stoten en hoeken op. De <b>uppercut</b> gaat er tussendoor en straft bukken extra af.</li>
-          <li><b>Bukken</b> laat stoten op je hoofd over je heen gaan, als je op tijd bent.</li>
-          <li><b>Counter:</b> raak je iemand die zelf aan het uithalen is, dan doet het 25% meer schade.</li>
-          <li><b>Stamina</b> (dunne balk) zakt bij elke stoot. Ben je leeg, dan slaan je stoten veel zachter.</li>
-          <li>Treffers op het hoofd doen meer schade dan op het lijf en maken duizelig.</li>
+          <li><b>Win het gevecht</b> met een knock-out, een TKO, of op de scorekaarten van drie juryleden (10-point must).</li>
+          <li><b>Elke klap is een botsing.</b> Snelheid van je vuist, de massa erachter en de plek waar je raakt bepalen het effect. Een hoek draait het hoofd weg; kin, kaak en slaap zijn gevaarlijk.</li>
+          <li><b>Eén stoot kan genoeg zijn.</b> Er is geen minimum aan schade: een schone counter op iemand die in je stoot loopt, kan meteen beslissen. Aangeslagen of moe? Dan ben je zelf kwetsbaarder.</li>
+          <li><b>Knockdown:</b> de scheidsrechter telt tot tien. Lig je zelf, tik dan snel op je stoottoetsen om op te staan. Drie knockdowns in één ronde is een TKO.</li>
+          <li><b>Combinaties:</b> gooi de volgende stoot met de andere hand terwijl de vorige terugkomt. Goede timing is goedkoper, sneller en neemt de draai van je romp mee.</li>
+          <li><b>Verdedigen:</b> dekking vangt stoten op (net op tijd = pareren), maar niet de uppercut en niet de hoek naar het lijf. Ontwijk (Q/E) vóór de stoot, weg van de slaande hand. Een gemiste zware stoot trekt je uit balans.</li>
+          <li><b>Lijfstoten</b> (bukken + stoot) kosten je tegenstander adem en uithouding. Een leverstoot kan iemand vloeren.</li>
+          <li><b>Conditie:</b> de dunne balk is je explosieve energie; het donkere stuk is wat je cardio niet meer haalt. Moe armen slaan trager en houden de dekking slechter omhoog.</li>
         </ul>
         <div class="row-buttons">
           <button class="btn primary" data-action="back">Terug</button>
@@ -151,6 +184,7 @@
         <div class="result-title" id="result-title">JIJ WINT</div>
         <p class="result-sub" id="result-sub"></p>
         <div class="stats" id="result-stats"></div>
+        <div class="cards" id="result-cards"></div>
         <div class="menu-buttons">
           <button class="btn primary" data-action="rematch">Revanche</button>
           <button class="btn" data-action="quit">Naar het menu</button>

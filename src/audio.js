@@ -11,6 +11,7 @@ export class AudioEngine {
     this.ready = false;
     this.muted = false;
     this.volumes = { master: 0.8, sfx: 0.9, crowd: 0.6 };
+    this.voice = true;
     this.excitement = 0.2;
   }
 
@@ -209,6 +210,66 @@ export class AudioEngine {
       o.start(t);
       o.stop(t + 1.9);
     }
+  }
+
+  // Scheidsrechter: een tik per tel, en zijn stem als de browser Nederlandse spraak heeft.
+  count(n) {
+    if (!this.ready) return;
+    this.tone({ freq: n >= 8 ? 700 : 560, dur: 0.09, gain: 0.16, type: 'triangle', bus: this.ui });
+    this.say(['één', 'twee', 'drie', 'vier', 'vijf', 'zes', 'zeven', 'acht', 'negen', 'tien'][n - 1]);
+  }
+
+  box() {
+    if (!this.ready) return;
+    this.say('Boks!');
+    this.cheer(0.5);
+  }
+
+  say(text) {
+    if (!text || this.muted || !this.voice) return;
+    const synth = window.speechSynthesis;
+    if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'nl-NL';
+      u.rate = 1.15;
+      u.pitch = 0.8;
+      u.volume = clamp(this.volumes.master * this.volumes.sfx, 0, 1);
+      const nl = synth.getVoices().find((v) => v.lang && v.lang.toLowerCase().startsWith('nl'));
+      if (nl) u.voice = nl;
+      synth.cancel();
+      synth.speak(u);
+    } catch {
+      // Geen spraak beschikbaar: de tik is genoeg.
+    }
+  }
+
+  // Een lichaam dat op het canvas klapt.
+  thud(speed = 2) {
+    if (!this.ready) return;
+    const p = clamp(speed / 3, 0.3, 1);
+    this.tone({ freq: 62, to: 34, dur: 0.35, gain: 0.6 * p, type: 'sine' });
+    this.noiseHit({ dur: 0.22, freq: 180, type: 'lowpass', q: 0.8, gain: 0.5 * p });
+    this.noiseHit({ time: 0.02, dur: 0.08, freq: 900, q: 1, gain: 0.15 * p });
+  }
+
+  parry() {
+    if (!this.ready) return;
+    this.noiseHit({ dur: 0.05, freq: vary(1600), q: 2, gain: 0.35 });
+    this.tone({ freq: vary(320), to: 180, dur: 0.06, gain: 0.15, type: 'triangle' });
+  }
+
+  slip() {
+    if (!this.ready) return;
+    this.noiseHit({ dur: 0.12, freq: vary(1400), sweepTo: 700, q: 1.2, gain: 0.06, attack: 0.03 });
+  }
+
+  // Zware ademhaling als de speler moe is.
+  breath(intensity = 0.5) {
+    if (!this.ready) return;
+    const g = 0.04 + intensity * 0.07;
+    this.noiseHit({ dur: 0.32, freq: vary(900, 0.15), q: 0.7, gain: g, attack: 0.08 });
+    this.noiseHit({ time: 0.42, dur: 0.38, freq: vary(650, 0.15), q: 0.7, gain: g * 0.8, attack: 0.1 });
   }
 
   uiClick() {

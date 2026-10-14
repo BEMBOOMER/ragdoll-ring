@@ -1,8 +1,9 @@
-// Three.js-weergave: scène, camera die de boksers volgt, schudden en effecten.
+// Three.js-weergave: scène, camera die de boksers volgt, schudden, effecten en herhalingen.
 import * as THREE from 'three';
 import { Arena } from './arena.js';
-import { FighterView, TEAM } from './fighterView.js';
+import { FighterView, TEAM, Marks } from './fighterView.js';
 import { Effects } from './effects.js';
+import { Referee } from './referee.js';
 
 export class Renderer {
   constructor(canvas, game) {
@@ -22,15 +23,19 @@ export class Renderer {
     this.camera.position.set(0, 2.2, 6);
     this.arena = new Arena(this.scene);
     this.effects = new Effects(this.scene);
+    this.referee = new Referee(this.scene);
+    this.marks = [new Marks(), new Marks()];
     this.views = [];
     this.trauma = 0;
     this.shakeEnabled = true;
+    this.blood = true;
     this.shakeT = 0;
     this.camState = { pos: new THREE.Vector3(0, 2.4, 7), look: new THREE.Vector3(0, 1.1, 0), side: new THREE.Vector3(0, 0, 1) };
     this.mode = 'menu';
     this.orbit = 0;
     this.focus = null;
     this.focusAmount = 0;
+    this.replay = null;
     this.resize();
     window.addEventListener('resize', () => this.resize());
     this.rebuildFighters();
@@ -48,7 +53,9 @@ export class Renderer {
 
   rebuildFighters() {
     for (const v of this.views) v.dispose();
-    this.views = this.game.fighters.map((f, i) => new FighterView(this.scene, f, TEAM[i]));
+    // Buiten een wedstrijd begint elke bokser schoon; in een wedstrijd blijven de sporen staan.
+    if (this.game.mode !== 'match') for (const m of this.marks) m.reset();
+    this.views = this.game.fighters.map((f, i) => new FighterView(this.scene, f, TEAM[i], this.marks[i]));
     this.focus = null;
     this.focusAmount = 0;
   }
@@ -60,6 +67,10 @@ export class Renderer {
 
   onEvent(e) {
     switch (e.type) {
+      case 'matchStart':
+        for (const m of this.marks) m.reset();
+        this.effects.clearBlood();
+        break;
       case 'spawn':
         this.rebuildFighters();
         break;
@@ -67,23 +78,39 @@ export class Renderer {
         const strength = Math.min(1, e.damage / 16);
         this.effects.impact(e.pos, e.dir, e.blocked ? 0.25 : strength, e.blocked ? 'block' : e.zone);
         if (!e.blocked) {
-          this.views[e.defender]?.hitFlash(0.4 + strength * 0.6);
+          const view = this.views[e.defender];
+          view?.hitFlash(0.4 + strength * 0.6);
+          view?.mark(e, this.blood);
+          // Bloed: uit een cut of neus, en op de handschoen die raakte.
+          if (this.blood && e.zone === 'head' && view?.marks.bleeding) {
+            this.effects.bleed(e.pos, e.dir, strength);
+            this.views[e.attacker]?.marks.gloves[e.punch === 'jab' || e.punch === 'leftHook' ? 'L' : 'R'].stain(strength);
+          }
           this.addTrauma(0.12 + strength * 0.3);
           this.arena.excite(0.08 + strength * 0.25);
           if (strength > 0.6) this.arena.burstFlashes(6);
         } else this.addTrauma(0.05);
-        if (e.ko) {
+        if (e.knockdown) {
           this.addTrauma(0.6);
           this.arena.excite(1);
           this.arena.burstFlashes(40);
         }
         break;
       }
-      case 'ko':
-        this.focus = e.loser;
+      case 'knockdown':
+        this.focus = e.fighter.side;
         break;
+      case 'thud':
+        this.addTrauma(Math.min(0.35, e.speed * 0.08));
+        break;
+      case 'resume':
       case 'roundStart':
         this.focus = null;
+        break;
+      case 'ko':
+        this.focus = e.loser;
+        this.arena.excite(1);
+        this.arena.burstFlashes(30);
         break;
       case 'fight':
         this.arena.excite(0.5);
@@ -96,6 +123,51 @@ export class Renderer {
       default:
         break;
     }
+  }
+
+  // ---------- herhaling ----------
+  // Speelt een opgenomen stuk af: normaal tempo, rond de treffer in slowmotion,
+  // met een camera die om de getroffen bokser heen draait.
+  playReplay(clip, onDone) {
+    if (!clip) {
+      onDone?.();
+      return;
+    }
+    const impact = clip.impact;
+    const hitAt = clip.at ?? clip.from + (clip.to - clip.from) * 0.4;
+    this.replay = { clip, t: clip.from, hitAt, impact, onDone, shown: false, angle: Math.random() * Math.PI * 2 };
+    this.trauma = 0;
+  }
+
+  stopReplay() {
+    const r = this.replay;
+    if (!r) return;
+    this.replay = null;
+    r.onDone?.();
+  }
+
+  updateReplay(dt) {
+    const r = this.replay;
+    const near = Math.abs(r.t - r.hitAt);
+    const speed = near < 0.35 ? 0.18 : near < 0.9 ? 0.45 : 0.9;
+    r.t += dt * speed;
+    this.game.replay.sample(r.t, (i, name, p, q) => this.views[i]?.setPart(name, p, q));
+    if (!r.shown && r.t >= r.hitAt && r.impact) {
+      r.shown = true;
+      this.effects.impact(r.impact.pos, r.impact.dir, 1, r.impact.zone);
+    }
+    // Camera: draait langzaam om het hoofd van de verliezer.
+    const loser = r.impact ? r.impact.defender : this.game.loser ?? 1;
+    const head = this.views[loser]?.byPart.head?.position || new THREE.Vector3(0, 1.4, 0);
+    r.angle += dt * 0.35;
+    const close = 1 - Math.min(1, near / 1.2);
+    const radius = 2.6 - close * 0.9;
+    const target = new THREE.Vector3(head.x, Math.max(0.5, head.y), head.z);
+    const pos = target.clone().add(new THREE.Vector3(Math.sin(r.angle) * radius, 0.35 + close * 0.1, Math.cos(r.angle) * radius));
+    this.camera.position.lerp(pos, Math.min(1, dt * 3));
+    this.camState.look.lerp(target, Math.min(1, dt * 4));
+    this.camera.lookAt(this.camState.look);
+    if (r.t >= r.clip.to) this.stopReplay();
   }
 
   // Wereldpositie → schermpixels (voor schadegetallen).
@@ -133,20 +205,21 @@ export class Renderer {
       const sep = axis.length();
       if (sep > 1e-3) axis.divideScalar(sep);
       // Camera staat loodrecht op de lijn tussen de boksers, speler 1 altijd links.
+      // Tijdens een telling (boksers ver uit elkaar) draait hij niet mee.
       const side = new THREE.Vector3(-axis.z, 0, axis.x);
-      cs.side.lerp(side, Math.min(1, dt * 2.5)).normalize();
+      if (this.focus === null) cs.side.lerp(side, Math.min(1, dt * 2.5)).normalize();
       const narrow = this.camera.aspect < 1;
-      const dist = (narrow ? 3.4 : 3.0) + sep * (narrow ? 1.4 : 0.95);
+      const dist = (narrow ? 3.4 : 3.0) + Math.min(sep, 2.2) * (narrow ? 1.4 : 0.95);
       targetLook = new THREE.Vector3(mid.x, 1.05, mid.z);
       targetPos = targetLook.clone().addScaledVector(cs.side, dist).add(new THREE.Vector3(0, 0.95, 0));
-      // Bij een knock-out langzaam inzoomen op de verliezer.
+      // Bij een knockdown of knock-out langzaam inzoomen op wie ligt.
       if (this.focus !== null && fighters[this.focus]?.parts.head) {
         this.focusAmount = Math.min(1, this.focusAmount + dt * 0.6);
         const h = fighters[this.focus].pos('chest');
         const lookAt = h.clone().setY(Math.max(0.5, h.y));
         targetLook.lerp(lookAt, this.focusAmount * 0.7);
         targetPos.lerp(lookAt.clone().addScaledVector(cs.side, 2.4).add(new THREE.Vector3(0, 0.9, 0)), this.focusAmount * 0.6);
-      }
+      } else this.focusAmount = Math.max(0, this.focusAmount - dt);
     }
     const k = Math.min(1, dt * (this.mode === 'menu' ? 1.2 : 4));
     cs.pos.lerp(targetPos, k);
@@ -167,10 +240,13 @@ export class Renderer {
 
   render(realDt) {
     const alpha = this.game.alpha;
-    for (const v of this.views) v.update(alpha, realDt);
+    const live = !this.replay;
+    for (const v of this.views) v.update(alpha, realDt, live);
     this.arena.update(realDt);
-    this.effects.update(realDt * (this.game.hitStop > 0 ? 0.15 : this.game.slowmo));
-    this.updateCamera(realDt);
+    this.referee.update(realDt, this.game, this.camState.side);
+    this.effects.update(realDt * (this.game.hitStop > 0 ? 0.15 : this.replay ? 0.4 : this.game.slowmo));
+    if (this.replay) this.updateReplay(realDt);
+    else this.updateCamera(realDt);
     this.renderer.render(this.scene, this.camera);
   }
 }

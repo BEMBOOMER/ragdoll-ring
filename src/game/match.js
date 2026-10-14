@@ -262,7 +262,10 @@ export class Game {
     const kd = this.lastKnockdown;
     const at = kd && kd.defender === loser ? kd.time : this.time;
     this.replayClip = this.replay.clip(at - 1.8, at + 2.6);
-    if (this.replayClip) this.replayClip.impact = kd && kd.defender === loser ? kd.hit : null;
+    if (this.replayClip) {
+      this.replayClip.at = at;
+      this.replayClip.impact = kd && kd.defender === loser ? kd.hit : null;
+    }
     this.events.push({ type: 'ko', loser, winner: 1 - loser, method, kind });
   }
 
